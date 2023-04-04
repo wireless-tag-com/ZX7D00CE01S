@@ -116,6 +116,7 @@ static lv_res_t decoder_info(struct _lv_img_decoder_t * decoder, const void * sr
     return LV_RES_INV;         /*If didn't succeeded earlier then it's an error*/
 }
 
+#include "stdio.h"
 
 /**
  * Open a PNG image and return the decided image
@@ -173,6 +174,7 @@ static lv_res_t decoder_open(lv_img_decoder_t * decoder, lv_img_decoder_dsc_t * 
         uint32_t png_width;             /*No used, just required by he decoder*/
         uint32_t png_height;            /*No used, just required by he decoder*/
 
+        printf("load png\n");
         /*Decode the image in ARGB8888 */
         error = lodepng_decode32(&img_data, &png_width, &png_height, img_dsc->data, img_dsc->data_size);
 

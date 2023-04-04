@@ -18,55 +18,30 @@
 #include "esp_timer.h"
 #include "gt911.h"
 
-#define TAG "RGB"
+#define TAG "QMSD BOARD INIT"
 
 static esp_lcd_panel_handle_t g_panel_handle = NULL;
-static SemaphoreHandle_t g_trans_ready = NULL;
-static SemaphoreHandle_t g_flush_ready = NULL;
 
-static bool __on_vsync_event(
-    esp_lcd_panel_handle_t panel,
-    const esp_lcd_rgb_panel_event_data_t *edata,
-    void *user_ctx
-)
-{   
-    BaseType_t high_task_awoken = pdFALSE;
-    xSemaphoreGiveFromISR(g_trans_ready, &high_task_awoken);
-    xSemaphoreGiveFromISR(g_flush_ready, &high_task_awoken);
-    
-    return high_task_awoken == pdTRUE;
-}
-
-static void __qmsd_lcd_task(void *args)
-{   
-    TickType_t tick;
-    for (;;) { 
-        tick = xTaskGetTickCount();
-        xSemaphoreTake(g_trans_ready, portMAX_DELAY);
-        vTaskDelayUntil(&tick, pdMS_TO_TICKS(20));
-        esp_lcd_rgb_panel_refresh(g_panel_handle);
-        xSemaphoreTake(g_flush_ready, 0);
-    }
-}
-
-/**
- * @brief LCD flush function callback for LVGL.
- *
- * @param disp_drv
- * @param area
- * @param color_p
- */
-static void __qsmd_rgb_tear_flush(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p)
+void touchpad_gt911_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
 {
-    int offsetx1 = area->x1;
-    int offsetx2 = area->x2;
-    int offsety1 = area->y1;
-    int offsety2 = area->y2;
+    uint16_t tp_x,tp_y;
+    uint8_t press;
+    gt911_read_status(&tp_x,&tp_y,&press);
+    data->state = press;
+	data->point.x = tp_x;
+	data->point.y = tp_y;
+}
 
-    esp_lcd_panel_draw_bitmap(g_panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_p);
-    xSemaphoreTake(g_flush_ready, portMAX_DELAY);
+static void __qmsd_touch_init(void)
+{
+    gt911_init(TOUCH_IIC_SDA, TOUCH_IIC_SCL, -1, 0x5D);
+    static lv_indev_drv_t indev_drv;               /*Descriptor of an input device driver*/
+    lv_indev_drv_init(&indev_drv);          /*Basic initialization*/
 
-    lv_disp_flush_ready(disp_drv);
+    indev_drv.type = LV_INDEV_TYPE_POINTER; /*The touchpad is pointer type device*/
+    indev_drv.read_cb = touchpad_gt911_read;            /*Library ready your touchpad via this function*/
+
+    lv_indev_drv_register(&indev_drv);      /*Finally register the driver*/
 }
 
 static void __qsmd_rgb_disp_flush(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_color_t *color_p)
@@ -80,48 +55,17 @@ static void __qsmd_rgb_disp_flush(lv_disp_drv_t *disp_drv, const lv_area_t *area
     lv_disp_flush_ready(disp_drv);
 }
 
-
-bool touchpad_gt911_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
-{
-    uint16_t tp_x,tp_y;
-    uint8_t press;
-    gt911_read_status(&tp_x,&tp_y,&press);
-    data->state = press;
-	data->point.x = tp_x;
-	data->point.y = tp_y;
-    return false;
-}
-
-static void qmsd_touch_init(void)
-{
-    gt911_init(TOUCH_IIC_SDA, TOUCH_IIC_SCL, -1, 0x5D);
-    lv_indev_drv_t indev_drv;               /*Descriptor of an input device driver*/
-    lv_indev_drv_init(&indev_drv);          /*Basic initialization*/
-
-    indev_drv.type = LV_INDEV_TYPE_POINTER; /*The touchpad is pointer type device*/
-    indev_drv.read_cb = touchpad_gt911_read;            /*Library ready your touchpad via this function*/
-
-    lv_indev_drv_register(&indev_drv);      /*Finally register the driver*/
-}
-
 void qmsd_rgb_init(esp_lcd_rgb_panel_config_t *panel_config)
 {
     static lv_disp_drv_t disp_drv;
     int buffer_size;
     void *buf1 = NULL;
     void *buf2 = NULL;
-	static lv_disp_draw_buf_t draw_buf;
+    static lv_disp_draw_buf_t draw_buf;
 
     lv_init();
 
     ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(panel_config, &g_panel_handle));
-    if (panel_config->flags.refresh_on_demand) {
-        esp_lcd_rgb_panel_event_callbacks_t cbs = {
-            .on_vsync = __on_vsync_event,
-        };
-        ESP_ERROR_CHECK(esp_lcd_rgb_panel_register_event_callbacks(g_panel_handle, &cbs, &disp_drv));
-    }
-
     ESP_ERROR_CHECK(esp_lcd_panel_reset(g_panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(g_panel_handle));
 
@@ -129,32 +73,18 @@ void qmsd_rgb_init(esp_lcd_rgb_panel_config_t *panel_config)
     esp_lcd_rgb_panel_get_frame_buffer(g_panel_handle, 2, &buf1, &buf2);
     lv_disp_draw_buf_init(&draw_buf, buf1, buf2, buffer_size);
 
-    if (panel_config->flags.refresh_on_demand) {
-        disp_drv.flush_cb = __qsmd_rgb_tear_flush;
-        disp_drv.draw_buf = &draw_buf;
-	disp_drv.full_refresh = 1;
-        disp_drv.hor_res = panel_config->timings.h_res;
-        disp_drv.ver_res = panel_config->timings.v_res;
+    lv_disp_drv_init(&disp_drv);
+    disp_drv.flush_cb = __qsmd_rgb_disp_flush;
+    disp_drv.draw_buf = &draw_buf;
+    disp_drv.hor_res = panel_config->timings.h_res;
+    disp_drv.ver_res = panel_config->timings.v_res;
+    disp_drv.full_refresh = 1;
 
-        lv_disp_drv_register(&disp_drv);
-
-        g_trans_ready = xSemaphoreCreateBinary();
-        assert(g_trans_ready);
-        xSemaphoreGive(g_trans_ready);
-        g_flush_ready = xSemaphoreCreateBinary();
-        assert(g_flush_ready);
-        xTaskCreate(__qmsd_lcd_task, "gui_task", 2048, NULL, 5, NULL);
-    } else {
-        disp_drv.flush_cb = __qsmd_rgb_disp_flush;
-        disp_drv.draw_buf = &draw_buf;
-        disp_drv.hor_res = panel_config->timings.h_res;
-        disp_drv.ver_res = panel_config->timings.v_res;
-
-        lv_disp_drv_register(&disp_drv);
-    }
+    lv_disp_drv_register(&disp_drv);
 }
 
-void screen_init(void) {
+void screen_init(void)
+{
     gpio_config_t bk_gpio_config = {
         .mode = GPIO_MODE_OUTPUT,
         .pin_bit_mask = 1ULL << LCD_PIN_BK_LIGHT
@@ -163,6 +93,22 @@ void screen_init(void) {
     ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
 
     ESP_ERROR_CHECK(gpio_set_level(LCD_PIN_BK_LIGHT, LCD_BK_LIGHT_OFF_LEVEL));
+
+    if (LCD_PIN_RST > -1) {
+        gpio_config_t rst_gpio_config = {
+            .mode = GPIO_MODE_OUTPUT,
+            .pin_bit_mask = 1ULL << LCD_PIN_RST
+        };
+        // Initialize the GPIO of rst
+        ESP_ERROR_CHECK(gpio_config(&rst_gpio_config));
+
+        ESP_ERROR_CHECK(gpio_set_level(LCD_PIN_RST, 1));
+        vTaskDelay(pdMS_TO_TICKS(100));
+        ESP_ERROR_CHECK(gpio_set_level(LCD_PIN_RST, 0));
+        vTaskDelay(pdMS_TO_TICKS(100));
+        ESP_ERROR_CHECK(gpio_set_level(LCD_PIN_RST, 1));
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 
     esp_lcd_rgb_panel_config_t panel_config = {
         .data_width = 16,
@@ -173,22 +119,22 @@ void screen_init(void) {
         .de_gpio_num = LCD_DE_GPIO,
         .disp_gpio_num = LCD_DISP_EN_GPIO,
         .data_gpio_nums = {
-            LCD_DATA0_GPIO,
-            LCD_DATA1_GPIO,
-            LCD_DATA2_GPIO,
-            LCD_DATA3_GPIO,
-            LCD_DATA4_GPIO,
-            LCD_DATA5_GPIO,
-            LCD_DATA6_GPIO,
-            LCD_DATA7_GPIO,
-            LCD_DATA8_GPIO,
-            LCD_DATA9_GPIO,
-            LCD_DATA10_GPIO,
-            LCD_DATA11_GPIO,
-            LCD_DATA12_GPIO,
-            LCD_DATA13_GPIO,
-            LCD_DATA14_GPIO,
-            LCD_DATA15_GPIO,
+            LCD_D0_GPIO,
+            LCD_D1_GPIO,
+            LCD_D2_GPIO,
+            LCD_D3_GPIO,
+            LCD_D4_GPIO,
+            LCD_D5_GPIO,
+            LCD_D6_GPIO,
+            LCD_D7_GPIO,
+            LCD_D8_GPIO,
+            LCD_D9_GPIO,
+            LCD_D10_GPIO,
+            LCD_D11_GPIO,
+            LCD_D12_GPIO,
+            LCD_D13_GPIO,
+            LCD_D14_GPIO,
+            LCD_D15_GPIO,
         },
         .timings = {
             .pclk_hz = 24000000,
@@ -196,20 +142,20 @@ void screen_init(void) {
             .v_res = 480,
             .hsync_pulse_width = 10,
             .hsync_back_porch = 40,
-            .hsync_front_porch = 40,
+            .hsync_front_porch = 40,    // 890
             .vsync_pulse_width = 6,
             .vsync_back_porch = 31,
-            .vsync_front_porch = 18,
+            .vsync_front_porch = 18,    // 535
         },
         .flags.fb_in_psram = 1,
         .flags.double_fb = 1,
-        .flags.refresh_on_demand = 1,   // Mannually control refresh operation
+        .flags.refresh_on_demand = 0,   // Mannually control refresh operation
         .bounce_buffer_size_px = 16 * 800,
         .clk_src = LCD_CLK_SRC_PLL160M,
     };
 
     qmsd_rgb_init(&panel_config);
+    __qmsd_touch_init();
 
-	qmsd_touch_init();
     ESP_ERROR_CHECK(gpio_set_level(LCD_PIN_BK_LIGHT, LCD_BK_LIGHT_ON_LEVEL));
 }

@@ -75,7 +75,6 @@ void gt911_read_status(uint16_t* x, uint16_t* y, uint8_t* touched)
     uint8_t status_reg;
 
     gt911_i2c_read(GT911_STATUS_REG, &status_reg, 1);
-//    ESP_LOGI(TAG, "\tstatus: 0x%02x", status_reg);
     touch_pnt_cnt = status_reg & 0x0F;
     if ((status_reg & 0x80) || (touch_pnt_cnt < 6)) {
         //Reset Status Reg Value

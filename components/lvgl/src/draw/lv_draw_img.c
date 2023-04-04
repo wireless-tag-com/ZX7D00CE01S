@@ -202,9 +202,11 @@ lv_img_src_t lv_img_src_get_type(const void * src)
         img_src_type = LV_IMG_SRC_FILE; /*If it's an ASCII character then it's file name*/
     }
     else if(u8_p[0] >= 0x80) {
+         LV_LOG_WARN("lv_img_src_get_type:  LV_IMG_SRC_SYMBOL");
         img_src_type = LV_IMG_SRC_SYMBOL; /*Symbols begins after 0x7F*/
     }
     else {
+        LV_LOG_WARN("lv_img_src_get_type:  LV_IMG_SRC_VARIABLE");
         img_src_type = LV_IMG_SRC_VARIABLE; /*`lv_img_dsc_t` is draw to the first byte < 0x20*/
     }
 
