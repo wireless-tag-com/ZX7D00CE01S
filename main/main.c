@@ -19,6 +19,8 @@ static void increase_lvgl_tick(void* arg) {
 
 extern void screen_init(void);
 
+LV_IMG_DECLARE(m);
+
 void lvgl_task(void* arg) {
     screen_init();
 
@@ -41,11 +43,5 @@ void lvgl_task(void* arg) {
 }
 
 void app_main(void) {
-    /*
-     * init aw9523
-     */
-    aw9523_softreset();
-    aw9523_init(TOUCH_IIC_SDA, TOUCH_IIC_SDA);
-
     xTaskCreatePinnedToCore(lvgl_task, NULL, 8 * 1024, NULL, 5, NULL, 1);
 }

@@ -34,7 +34,7 @@ void touchpad_gt911_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
 
 static void __qmsd_touch_init(void)
 {
-    gt911_init(TOUCH_IIC_SDA, TOUCH_IIC_SCL, -1, 0x5D);
+    gt911_init(TOUCH_IIC_SDA, TOUCH_IIC_SCL, TOUCH_INT, 0x5D);
     static lv_indev_drv_t indev_drv;               /*Descriptor of an input device driver*/
     lv_indev_drv_init(&indev_drv);          /*Basic initialization*/
 
@@ -93,6 +93,26 @@ void screen_init(void)
     ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
 
     ESP_ERROR_CHECK(gpio_set_level(LCD_PIN_BK_LIGHT, LCD_BK_LIGHT_OFF_LEVEL));
+
+    gpio_config_t rst_gpio_config = {
+        .mode = GPIO_MODE_OUTPUT,
+        .pin_bit_mask = 1ULL << LCD_PIN_RST
+    };
+    // Initialize the GPIO of rst
+    ESP_ERROR_CHECK(gpio_config(&rst_gpio_config));
+
+    gpio_config_t int_gpio_config = {
+        .mode = GPIO_MODE_OUTPUT,
+        .pin_bit_mask = 1ULL << TOUCH_INT
+    };
+    ESP_ERROR_CHECK(gpio_config(&int_gpio_config));
+
+	ESP_ERROR_CHECK(gpio_set_level(LCD_PIN_RST, 1));
+	vTaskDelay(pdMS_TO_TICKS(100));
+    ESP_ERROR_CHECK(gpio_set_level(LCD_PIN_RST, 0));
+    vTaskDelay(pdMS_TO_TICKS(100));
+    ESP_ERROR_CHECK(gpio_set_level(LCD_PIN_RST, 1));
+    vTaskDelay(pdMS_TO_TICKS(100));
 
     if (LCD_PIN_RST > -1) {
         gpio_config_t rst_gpio_config = {
@@ -155,6 +175,16 @@ void screen_init(void)
     };
 
     qmsd_rgb_init(&panel_config);
+    vTaskDelay(pdMS_TO_TICKS(20));
+
+    gpio_config_t en_gpio_config = {
+        .mode = GPIO_MODE_OUTPUT,
+        .pin_bit_mask = 1ULL << LCD_PIN_EN
+    };
+    // Initialize the GPIO of backlight
+    ESP_ERROR_CHECK(gpio_config(&en_gpio_config));
+
+    ESP_ERROR_CHECK(gpio_set_level(LCD_PIN_EN, 1));
     __qmsd_touch_init();
 
     ESP_ERROR_CHECK(gpio_set_level(LCD_PIN_BK_LIGHT, LCD_BK_LIGHT_ON_LEVEL));
